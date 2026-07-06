@@ -13,11 +13,13 @@ User=greek
 Group=greek
 WorkingDirectory=/opt/greek-flashcards
 Environment=KOINE_DB=/opt/greek-flashcards/koine.db
-Environment=PORT=8080
+Environment=PORT=80
 Environment=WORKERS=3
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 # create the DB/schema on first boot, then run gunicorn
 ExecStartPre=/opt/greek-flashcards/.venv/bin/python3 -c "import app; app.init_db()"
-ExecStart=/opt/greek-flashcards/.venv/bin/gunicorn --workers 3 --bind 0.0.0.0:8080 app:app
+ExecStart=/opt/greek-flashcards/.venv/bin/gunicorn --workers 3 --bind 0.0.0.0:80 app:app
 Restart=on-failure
 RestartSec=3
 
