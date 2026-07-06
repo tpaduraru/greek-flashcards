@@ -1,0 +1,25 @@
+# systemd service for NT Greek Flashcards
+# 1. Edit the paths/user below to match your install.
+# 2. sudo cp greekflashcards.service /etc/systemd/system/
+# 3. sudo systemctl daemon-reload
+# 4. sudo systemctl enable --now greekflashcards
+[Unit]
+Description=NT Greek Flashcards
+After=network.target
+
+[Service]
+Type=simple
+User=greek
+Group=greek
+WorkingDirectory=/opt/greek-flashcards
+Environment=KOINE_DB=/opt/greek-flashcards/koine.db
+Environment=PORT=8080
+Environment=WORKERS=3
+# create the DB/schema on first boot, then run gunicorn
+ExecStartPre=/usr/bin/python3 -c "import app; app.init_db()"
+ExecStart=/usr/bin/gunicorn --workers 3 --bind 0.0.0.0:8080 app:app
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
