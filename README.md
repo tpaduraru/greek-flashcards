@@ -75,7 +75,7 @@ works and falls back to system serif/sans fonts.
 
 ```bash
 cd greek-flashcards
-pip install -r requirements.txt          # add --break-system-packages on Debian/Ubuntu if pip complains
+.venv/bin/pip install -r requirements.txt          # add --break-system-packages on Debian/Ubuntu if pip complains
 python3 app.py                           # dev server on http://0.0.0.0:8080
 ```
 
@@ -102,7 +102,7 @@ disk is plenty). Start it and open a shell / SSH in.
 ### 2. Install dependencies
 
 ```bash
-apt update && apt install -y python3 python3-pip
+apt update && apt install -y python3 python3-pip python3-venv
 ```
 
 ### 3. Copy the app in and create a service user
@@ -112,7 +112,7 @@ useradd --system --create-home --home-dir /opt/greek-flashcards greek
 # copy the project files into /opt/greek-flashcards (scp, git, or the Proxmox file push)
 chown -R greek:greek /opt/greek-flashcards
 cd /opt/greek-flashcards
-pip install -r requirements.txt --break-system-packages
+.venv/bin/pip install -r requirements.txt 
 ```
 
 ### 4. Run it with gunicorn

@@ -16,8 +16,8 @@ Environment=KOINE_DB=/opt/greek-flashcards/koine.db
 Environment=PORT=8080
 Environment=WORKERS=3
 # create the DB/schema on first boot, then run gunicorn
-ExecStartPre=/usr/bin/python3 -c "import app; app.init_db()"
-ExecStart=/usr/bin/gunicorn --workers 3 --bind 0.0.0.0:8080 app:app
+ExecStartPre=/opt/greek-flashcards/.venv/bin/python3 -c "import app; app.init_db()"
+ExecStart=/opt/greek-flashcards/.venv/bin/gunicorn --workers 3 --bind 0.0.0.0:8080 app:app
 Restart=on-failure
 RestartSec=3
 
