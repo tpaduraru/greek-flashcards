@@ -19,7 +19,8 @@ const api = async (path, opts = {}) => {
 /* ---------------- app state ---------------- */
 const state = {
   authMode: "login",
-  activeDeck: null,        // slug
+  selected: new Set(),     // slugs currently checked in the menu
+  activeSlugs: [],         // slugs of the session in progress
   session: null,           // { deck, queue, current, size, completed }
   flipped: false,
 };
@@ -108,9 +109,22 @@ async function loadDecks() {
   const menu = $("#menu");
   menu.innerHTML = "";
   for (const group of groups) {
+    const slugsInGroup = group.decks.map(d => d.slug);
     const g = document.createElement("div");
     g.className = "menu-group";
-    g.innerHTML = `<div class="menu-group-label">${group.name}</div>`;
+
+    const label = document.createElement("button");
+    label.className = "menu-group-label";
+    label.type = "button";
+    label.textContent = group.name;
+    label.title = "Select or clear this whole group";
+    label.addEventListener("click", () => {
+      const allOn = slugsInGroup.every(s => state.selected.has(s));
+      slugsInGroup.forEach(s => allOn ? state.selected.delete(s) : state.selected.add(s));
+      loadDecks();
+    });
+    g.appendChild(label);
+
     for (const deck of group.decks) {
       const done = deck.total > 0 && deck.learned >= deck.total;
       const some = deck.learned > 0 && !done;
@@ -118,22 +132,47 @@ async function loadDecks() {
       const dueLine = deck.due > 0
         ? `<span class="due">${deck.due} due</span>`
         : `${deck.learned}/${deck.total}`;
-      const row = document.createElement("button");
-      row.className = "deck-row" + (state.activeDeck === deck.slug ? " is-active" : "");
-      row.dataset.slug = deck.slug;
+      const checked = state.selected.has(deck.slug);
+      const row = document.createElement("label");
+      row.className = "deck-row" + (checked ? " is-selected" : "");
       row.innerHTML = `
+        <input type="checkbox" class="deck-check" ${checked ? "checked" : ""}>
         <span class="deck-dot ${dotCls}"></span>
         <span class="deck-meta">
           <span class="deck-name">${deck.name}</span>
           <span class="deck-sub">${deck.subtitle || ""}</span>
         </span>
         <span class="deck-count">${dueLine}</span>`;
-      row.addEventListener("click", () => startSession(deck.slug));
+      const box = row.querySelector(".deck-check");
+      box.addEventListener("change", () => {
+        box.checked ? state.selected.add(deck.slug) : state.selected.delete(deck.slug);
+        row.classList.toggle("is-selected", box.checked);
+        updateStudyButton();
+      });
       g.appendChild(row);
     }
     menu.appendChild(g);
   }
+  updateStudyButton();
 }
+
+function updateStudyButton() {
+  const n = state.selected.size;
+  const btn = $("#study-selected");
+  btn.disabled = n === 0;
+  btn.textContent = n === 0
+    ? "Select decks to study"
+    : `Study ${n} deck${n === 1 ? "" : "s"}`;
+  $("#clear-selected").hidden = n === 0;
+}
+
+$("#study-selected").addEventListener("click", () => {
+  if (state.selected.size) startSession([...state.selected]);
+});
+$("#clear-selected").addEventListener("click", () => {
+  state.selected.clear();
+  loadDecks();
+});
 
 /* ============================================================
    STUDY SESSION
@@ -141,17 +180,16 @@ async function loadDecks() {
 function showWelcome() {
   $("#welcome").hidden = false;
   $("#study").hidden = true;
-  state.activeDeck = null;
+  state.activeSlugs = [];
   $("#deck-name").textContent = "Koine";
   $("#deck-sub").textContent = "Choose something to practice";
-  $$(".deck-row").forEach(r => r.classList.remove("is-active"));
 }
 
-async function startSession(slug) {
+async function startSession(slugs) {
   closeDrawer();
-  const data = await api(`/api/deck/${slug}/session?limit=24`);
-  state.activeDeck = slug;
-  $$(".deck-row").forEach(r => r.classList.toggle("is-active", r.dataset.slug === slug));
+  const qs = `slugs=${slugs.map(encodeURIComponent).join(",")}`;
+  const data = await api(`/api/session?${qs}&limit=60`);
+  state.activeSlugs = data.deck.slugs || slugs;
 
   $("#deck-name").textContent = data.deck.name;
   $("#deck-sub").textContent = data.deck.subtitle || "";
@@ -162,8 +200,8 @@ async function startSession(slug) {
   $(".session-meta").hidden = false;
 
   if (!data.cards.length) {
-    // Nothing due — offer a full review instead.
-    const all = await api(`/api/deck/${slug}/session?mode=all&limit=200`);
+    // Nothing due — offer a full review of the selected decks instead.
+    const all = await api(`/api/session?${qs}&mode=all&limit=400`);
     state.session = makeSession(data.deck, all.cards);
     if (!all.cards.length) { finishSession(true); return; }
   } else {
@@ -246,7 +284,9 @@ $("#card").addEventListener("keydown", (e) => {
 });
 $("#reveal-btn").addEventListener("click", flipCard);
 $$(".grade").forEach(b => b.addEventListener("click", () => grade(b.dataset.grade)));
-$("#again-btn").addEventListener("click", () => startSession(state.activeDeck));
+$("#again-btn").addEventListener("click", () => {
+  if (state.activeSlugs.length) startSession(state.activeSlugs);
+});
 
 /* global keyboard shortcuts during study */
 document.addEventListener("keydown", (e) => {

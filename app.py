@@ -345,6 +345,88 @@ def deck_session(slug):
                    cards=cards)
 
 
+@app.get("/api/session")
+@login_required
+def multi_session():
+    """
+    Build a combined study session across one OR MORE decks.
+    ?slugs=freq-1,freq-2,gram-cases  (comma-separated)
+    Due/new cards first, ordered by due date globally, capped by ?limit
+    (default 40). ?mode=all returns every card in the selected decks.
+    """
+    db = get_db()
+    uid = current_user_id()
+
+    slugs = [s.strip() for s in request.args.get("slugs", "").split(",") if s.strip()]
+    if not slugs:
+        return jsonify(error="No decks selected."), 400
+
+    # Resolve slugs -> deck rows, preserving the requested order and skipping
+    # unknown ones. Bail only if none of them exist.
+    placeholders = ",".join("?" * len(slugs))
+    deck_rows = db.execute(
+        f"SELECT id, slug, name, subtitle FROM decks WHERE slug IN ({placeholders})",
+        slugs,
+    ).fetchall()
+    by_slug = {r["slug"]: r for r in deck_rows}
+    decks = [by_slug[s] for s in slugs if s in by_slug]
+    if not decks:
+        return jsonify(error="No such deck(s)."), 404
+
+    deck_ids = [d["id"] for d in decks]
+    id_ph = ",".join("?" * len(deck_ids))
+
+    mode = request.args.get("mode", "srs")
+    try:
+        limit = max(1, min(400, int(request.args.get("limit", 40))))
+    except ValueError:
+        limit = 40
+    now_iso = _now().isoformat()
+
+    if mode == "all":
+        rows = db.execute(
+            f"""
+            SELECT c.*, p.box, p.correct, p.wrong, p.due_at
+            FROM cards c
+            LEFT JOIN progress p ON p.card_id = c.id AND p.user_id = ?
+            WHERE c.deck_id IN ({id_ph})
+            ORDER BY c.deck_id, c.sort_order
+            """,
+            (uid, *deck_ids),
+        ).fetchall()
+    else:
+        rows = db.execute(
+            f"""
+            SELECT c.*, p.box, p.correct, p.wrong, p.due_at
+            FROM cards c
+            LEFT JOIN progress p ON p.card_id = c.id AND p.user_id = ?
+            WHERE c.deck_id IN ({id_ph})
+              AND (p.card_id IS NULL OR p.due_at IS NULL OR p.due_at <= ?)
+            ORDER BY (p.due_at IS NULL) DESC, p.due_at ASC, c.deck_id, c.sort_order
+            LIMIT ?
+            """,
+            (uid, *deck_ids, now_iso, limit),
+        ).fetchall()
+
+    cards = [{
+        "id": r["id"],
+        "front": r["front"],
+        "back": r["back"],
+        "hint": r["hint"],
+        "extra": r["extra"],
+        "box": r["box"] if r["box"] is not None else 0,
+    } for r in rows]
+
+    if len(decks) == 1:
+        header = {"name": decks[0]["name"], "subtitle": decks[0]["subtitle"]}
+    else:
+        header = {"name": f"{len(decks)} decks",
+                  "subtitle": " · ".join(d["name"] for d in decks)}
+    header["slugs"] = [d["slug"] for d in decks]
+
+    return jsonify(deck=header, cards=cards)
+
+
 @app.post("/api/review")
 @login_required
 def review():
